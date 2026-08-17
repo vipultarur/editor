@@ -1,7 +1,7 @@
 /**
- * YouTube & Instagram Download Utility
+ * YouTube, Instagram & Multi-Platform Media Download Utility
  *
- * Uses local proxy endpoint `/api/yt-download` (powered by yt-dlp & Cobalt API fallback)
+ * Uses local proxy endpoint `/api/yt-download` (powered by yt-dlp, Invidious & Cobalt fallback)
  * to fetch streams into browser Blobs.
  */
 
@@ -27,17 +27,37 @@ export interface YouTubeDownloadProgress {
 type ProgressCallback = (progress: YouTubeDownloadProgress) => void;
 
 /**
+ * Normalizes input URL by trimming, removing surrounding quotes,
+ * and adding https:// protocol if missing.
+ */
+export function normalizeUrlInput(input: string): string {
+  let trimmed = input.trim();
+  if (!trimmed) return '';
+  // Remove enclosing quotes
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
+  // Prepend https:// if missing protocol
+  if (!/^https?:\/\//i.test(trimmed)) {
+    trimmed = 'https://' + trimmed;
+  }
+  return trimmed;
+}
+
+/**
  * Validates that a string is a valid YouTube URL
  */
 export function isYouTubeUrl(url: string): boolean {
   try {
-    const parsed = new URL(url.trim());
-    const hostname = parsed.hostname.replace('www.', '');
+    const normalized = normalizeUrlInput(url);
+    const parsed = new URL(normalized);
+    const hostname = parsed.hostname.replace('www.', '').toLowerCase();
     return (
       hostname === 'youtube.com' ||
       hostname === 'youtu.be' ||
       hostname === 'm.youtube.com' ||
-      hostname === 'music.youtube.com'
+      hostname === 'music.youtube.com' ||
+      hostname === 'youtube-nocookie.com'
     );
   } catch {
     return false;
@@ -49,8 +69,9 @@ export function isYouTubeUrl(url: string): boolean {
  */
 export function isInstagramUrl(url: string): boolean {
   try {
-    const parsed = new URL(url.trim());
-    const hostname = parsed.hostname.replace('www.', '');
+    const normalized = normalizeUrlInput(url);
+    const parsed = new URL(normalized);
+    const hostname = parsed.hostname.replace('www.', '').toLowerCase();
     return (
       hostname === 'instagram.com' ||
       hostname === 'instagr.am'
@@ -61,19 +82,43 @@ export function isInstagramUrl(url: string): boolean {
 }
 
 /**
- * Check if the URL is supported (YouTube or Instagram)
+ * Check if the URL is a supported media URL (YouTube, Instagram, TikTok, Twitter/X, Vimeo, direct media links, or any valid HTTP/HTTPS video URL)
  */
 export function isSupportedMediaUrl(url: string): boolean {
-  return isYouTubeUrl(url) || isInstagramUrl(url);
+  if (!url || !url.trim()) return false;
+  try {
+    const normalized = normalizeUrlInput(url);
+    const parsed = new URL(normalized);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Detect platform type from URL
  */
-export function getMediaPlatform(url: string): 'youtube' | 'instagram' | 'unknown' {
-  if (isYouTubeUrl(url)) return 'youtube';
-  if (isInstagramUrl(url)) return 'instagram';
-  return 'unknown';
+export function getMediaPlatform(url: string): 'youtube' | 'instagram' | 'tiktok' | 'vimeo' | 'twitter' | 'direct' | 'video' | 'unknown' {
+  if (!url || !url.trim()) return 'unknown';
+  try {
+    const normalized = normalizeUrlInput(url);
+    if (isYouTubeUrl(normalized)) return 'youtube';
+    if (isInstagramUrl(normalized)) return 'instagram';
+    
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.replace('www.', '').toLowerCase();
+    if (host.includes('tiktok.com')) return 'tiktok';
+    if (host.includes('vimeo.com')) return 'vimeo';
+    if (host.includes('twitter.com') || host.includes('x.com')) return 'twitter';
+    
+    if (/\.(mp4|webm|mov|mkv|avi|flv|m4v|mp3|wav|m4a|aac|ogg)($|\?)/i.test(parsed.pathname)) {
+      return 'direct';
+    }
+    
+    return 'video';
+  } catch {
+    return 'unknown';
+  }
 }
 
 /**
@@ -81,21 +126,27 @@ export function getMediaPlatform(url: string): 'youtube' | 'instagram' | 'unknow
  */
 export function extractVideoId(url: string): string | null {
   try {
-    const parsed = new URL(url.trim());
-    const hostname = parsed.hostname.replace('www.', '');
+    const normalized = normalizeUrlInput(url);
+    const parsed = new URL(normalized);
+    const hostname = parsed.hostname.replace('www.', '').toLowerCase();
 
     if (hostname === 'youtu.be') {
       const id = parsed.pathname.slice(1).split('/')[0].split('?')[0];
       return id || null;
     }
 
-    if (hostname === 'youtube.com' || hostname === 'm.youtube.com' || hostname === 'music.youtube.com') {
+    if (
+      hostname === 'youtube.com' ||
+      hostname === 'm.youtube.com' ||
+      hostname === 'music.youtube.com' ||
+      hostname === 'youtube-nocookie.com'
+    ) {
       // /watch?v=ID
       const v = parsed.searchParams.get('v');
       if (v) return v;
 
-      // /shorts/ID or /embed/ID or /v/ID
-      const pathMatch = parsed.pathname.match(/^\/(shorts|embed|v)\/([^/?]+)/);
+      // /shorts/ID or /embed/ID or /v/ID or /clip/ID
+      const pathMatch = parsed.pathname.match(/^\/(shorts|embed|v|clip)\/([^/?]+)/);
       if (pathMatch) return pathMatch[2];
 
       // /live/ID
@@ -110,30 +161,31 @@ export function extractVideoId(url: string): string | null {
 }
 
 /**
- * Downloads a YouTube or Instagram video/audio via local proxy server endpoint
+ * Downloads a video or audio stream via local proxy server endpoint
  */
 export async function downloadYouTubeVideo(
   url: string,
   options: YouTubeDownloadOptions = {},
   onProgress?: ProgressCallback
 ): Promise<YouTubeDownloadResult> {
-  const platform = getMediaPlatform(url);
+  const normalizedUrl = normalizeUrlInput(url);
+  const platform = getMediaPlatform(normalizedUrl);
 
   // 1. Validate URL
   onProgress?.({
     stage: 'validating',
-    message: `Validating ${platform === 'instagram' ? 'Instagram' : 'YouTube'} URL...`,
+    message: `Validating ${platform === 'instagram' ? 'Instagram' : platform === 'youtube' ? 'YouTube' : 'media'} link...`,
   });
 
-  if (platform === 'unknown') {
-    throw new Error('Invalid URL. Supported links: YouTube (youtube.com, youtu.be, shorts) & Instagram (reels, posts).');
+  if (!isSupportedMediaUrl(normalizedUrl)) {
+    throw new Error('Invalid URL format. Please paste a valid YouTube, Instagram, or video link.');
   }
 
-  let cleanUrl = url.trim();
-  let defaultPrefix = platform === 'instagram' ? 'instagram' : 'youtube';
+  let cleanUrl = normalizedUrl;
+  let defaultPrefix: string = platform;
 
   if (platform === 'youtube') {
-    const videoId = extractVideoId(url);
+    const videoId = extractVideoId(normalizedUrl);
     if (videoId) {
       cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
       defaultPrefix = `youtube_${videoId}`;
@@ -148,7 +200,7 @@ export async function downloadYouTubeVideo(
   // 2. Fetch via local server proxy endpoint (/api/yt-download)
   onProgress?.({
     stage: 'requesting',
-    message: `Connecting to ${platform === 'instagram' ? 'Instagram' : 'YouTube'} stream proxy...`,
+    message: `Connecting to ${platform === 'instagram' ? 'Instagram' : platform === 'youtube' ? 'YouTube' : 'video'} stream proxy...`,
   });
 
   const queryParams = new URLSearchParams({
@@ -163,24 +215,31 @@ export async function downloadYouTubeVideo(
     const videoResponse = await fetch(proxyUrl);
 
     if (!videoResponse.ok) {
-      let errorMessage = `HTTP ${videoResponse.status}`;
+      let errorMessage = 'Failed to extract video stream from URL. Please check the link or try another video.';
       try {
         const errorJson = await videoResponse.json();
-        if (errorJson?.error) errorMessage = errorJson.error;
+        if (errorJson?.error && typeof errorJson.error === 'string') {
+          // If the error includes JWT or technical proxy details, present a friendly message
+          if (errorJson.error.includes('jwt') || errorJson.error.includes('cobalt') || errorJson.error.includes('HTTP 400')) {
+            errorMessage = 'Video service unavailable for this specific link. Please verify the URL or try uploading a local video file.';
+          } else {
+            errorMessage = errorJson.error;
+          }
+        }
       } catch {
-        // Ignore
+        // Ignore JSON parse errors
       }
-      throw new Error(`Proxy error: ${errorMessage}`);
+      throw new Error(errorMessage);
     }
 
     onProgress?.({
       stage: 'downloading',
-      message: `Downloading ${isAudio ? 'audio' : 'video'} into browser memory...`,
+      message: `Downloading ${isAudio ? 'audio' : 'video'} into memory...`,
       progress: 0,
     });
 
     const contentLength = videoResponse.headers.get('content-length');
-    const totalBytes = contentLength ? parseInt(contentLength) : 0;
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
 
     if (totalBytes > 0 && videoResponse.body) {
       const reader = videoResponse.body.getReader();
@@ -224,7 +283,8 @@ export async function downloadYouTubeVideo(
     if (err instanceof Error) {
       throw err;
     }
-    throw new Error('Failed to fetch media stream.');
+    throw new Error('Failed to fetch media stream. Please verify the URL or try again.');
   }
 }
+
 

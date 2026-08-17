@@ -42,7 +42,7 @@ export interface MergedVideo {
   sourceVoiceId: string;
 }
 
-export type ActiveTab = 'editor' | 'shorts' | 'voice' | 'merge' | 'match-short' | 'downloader';
+export type ActiveTab = 'editor' | 'shorts' | 'voice' | 'merge' | 'match-short' | 'downloader' | 'multi-player';
 
 export interface SessionState {
   uploadedVideo: UploadedVideo | null;

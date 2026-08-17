@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { formatFileSize } from '../utils/fileHelpers';
 import { isVideoFileSupported } from '../utils/videoHelpers';
-import { isSupportedMediaUrl } from '../utils/youtubeDownload';
+import { isSupportedMediaUrl, normalizeUrlInput } from '../utils/youtubeDownload';
 import {
   getStoredUrlHistory,
   addUrlToHistory,
@@ -59,15 +59,15 @@ export default function VideoUploadZone({
   const handleYouTubeSubmit = useCallback(
     (overrideUrl?: string) => {
       setError(null);
-      const url = (overrideUrl ?? youtubeUrl).trim();
+      const url = normalizeUrlInput(overrideUrl ?? youtubeUrl);
 
       if (!url) {
-        setError('Please enter a YouTube or Instagram URL.');
+        setError('Please enter a video URL (YouTube, Instagram, TikTok, etc.).');
         return;
       }
 
       if (!isSupportedMediaUrl(url)) {
-        setError('Invalid URL. Supported formats: YouTube (youtube.com, youtu.be, shorts) & Instagram (reels/posts)');
+        setError('Invalid URL. Please enter a valid video or media link.');
         return;
       }
 

@@ -5,6 +5,7 @@ import {
   downloadYouTubeVideo,
   isSupportedMediaUrl,
   getMediaPlatform,
+  normalizeUrlInput,
   type YouTubeDownloadProgress,
 } from '../utils/youtubeDownload';
 import { formatTime, formatFileSize } from '../utils/fileHelpers';
@@ -19,7 +20,7 @@ interface DownloadedItem {
   blobUrl: string;
   blob: Blob;
   filename: string;
-  platform: 'youtube' | 'instagram' | 'unknown';
+  platform: 'youtube' | 'instagram' | 'tiktok' | 'vimeo' | 'twitter' | 'direct' | 'video' | 'unknown';
   format: FormatType;
   quality: string;
   duration: number;
@@ -66,8 +67,9 @@ export default function DownloaderPanel() {
   const trackRef = useRef<HTMLDivElement>(null);
 
   // Auto-detect platform
-  const platform = getMediaPlatform(url);
-  const isValidUrl = isSupportedMediaUrl(url);
+  const normalizedUrl = normalizeUrlInput(url);
+  const platform = getMediaPlatform(normalizedUrl);
+  const isValidUrl = isSupportedMediaUrl(normalizedUrl);
 
   // Load FFmpeg on mount
   useEffect(() => {
@@ -102,13 +104,14 @@ export default function DownloaderPanel() {
 
   // Fetch Preview Stream to enable visual marking & playback track
   const handleFetchPreview = async () => {
-    if (!url.trim()) {
-      setError('Please paste a YouTube or Instagram URL.');
+    const cleanUrl = normalizeUrlInput(url);
+    if (!cleanUrl) {
+      setError('Please paste a YouTube or video URL.');
       return;
     }
 
     if (!isValidUrl) {
-      setError('Invalid link. Please provide a YouTube (watch/shorts) or Instagram (reels/posts) URL.');
+      setError('Invalid link format. Please provide a valid video link.');
       return;
     }
 
@@ -117,23 +120,13 @@ export default function DownloaderPanel() {
     setCurrentDownloaded(null);
 
     try {
-      const downloadResult = await downloadYouTubeVideo(
-        url,
-        {
-          quality,
-          format: formatType,
-          isAudioOnly: formatType === 'audio',
-        },
-        (p) => setProgressState(p)
-      );
-
-      const urlBlob = URL.createObjectURL(downloadResult.blob);
-      setRawBlob(downloadResult.blob);
-      setPreviewBlobUrl(urlBlob);
-
-      setProgressState({ stage: 'done', message: 'Stream loaded! Play video and mark range.' });
+      // Set stream URL directly so browser HTML5 player streams & plays instantly with Range requests (<500ms)
+      const streamProxyUrl = `/api/yt-download?url=${encodeURIComponent(cleanUrl)}&quality=${formatType === 'audio' ? 'audio' : '360'}&audio=${formatType === 'audio' ? 'true' : 'false'}`;
+      setPreviewBlobUrl(streamProxyUrl);
+      setRawBlob(null);
+      setProgressState({ stage: 'done', message: 'Stream ready! Play video and mark range.' });
     } catch (err: any) {
-      setError(err?.message || 'Failed to fetch video stream.');
+      setError(err?.message || 'Failed to load video stream.');
       setProgressState(null);
     } finally {
       setIsFetchingPreview(false);

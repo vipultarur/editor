@@ -7,6 +7,7 @@ import MergePanel from './components/MergePanel';
 import ProductMatchPanel from './components/ProductMatch/ProductMatchPanel';
 import VideoEditorWorkspace from './components/VideoEditor/VideoEditorWorkspace';
 import DownloaderPanel from './components/DownloaderPanel';
+import MultiPlayerPanel from './components/MultiPlayerPanel';
 
 function AppContent() {
   const { state, dispatch } = useSession();
@@ -40,6 +41,7 @@ function AppContent() {
           {state.activeTab === 'shorts' && <VideoShortsPanel />}
           {state.activeTab === 'voice' && <VoicePanel />}
           {state.activeTab === 'merge' && <MergePanel />}
+          {state.activeTab === 'multi-player' && <MultiPlayerPanel />}
         </div>
 
         {/* Footer */}

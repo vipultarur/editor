@@ -8,6 +8,7 @@ const tabs: Array<{ id: ActiveTab; label: string; icon: string; description: str
   { id: 'shorts', label: 'Shorts', icon: '✂️', description: 'Split videos' },
   { id: 'voice', label: 'Voice', icon: '🎙️', description: 'Generate speech' },
   { id: 'merge', label: 'Merge', icon: '🎬', description: 'Combine clips' },
+  { id: 'multi-player', label: 'Multi Player', icon: '🎛️', description: 'Multiple sync players' },
 ];
 
 export default function Sidebar() {

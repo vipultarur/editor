@@ -86,12 +86,13 @@ export function useFFmpeg() {
         }));
       });
 
-      const baseURL = 'https://unpkg.com/@ffmpeg/core-mt@0.12.9/dist/esm';
+      // Use single-threaded FFmpeg core — does NOT require SharedArrayBuffer or COOP/COEP headers.
+      // This allows YouTube iframe embeds to work without "refused to connect" errors.
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.9/dist/esm';
 
       await ffmpeg.load({
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
       });
 
       ffmpegRef.current = ffmpeg;
